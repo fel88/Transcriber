@@ -119,16 +119,19 @@ namespace Transcriber
             foreach (var item in doc.Descendants("setting"))
             {
                 var name = item.Attribute("name").Value;
-                if (name == "ggufPath")
+                switch (name)
                 {
-                    Configs.GGUFPath = item.Value;
-                }
-                if (name == "autoTranscribing")
-                {
-                    Configs.AutoTranscribing = bool.Parse(item.Value);
+                    case "ggufPath":
+                        Configs.GGUFPath = item.Value;
+                        break;
+                    case "autoTranscribing":
+                        Configs.AutoTranscribing = bool.Parse(item.Value);
+                        break;
+                    case "runtimeTranscribing":
+                        Configs.RuntimeTranscribing = bool.Parse(item.Value);
+                        break;
                 }
             }
-
         }
 
         public void SaveConfig()
@@ -136,6 +139,7 @@ namespace Transcriber
             XElement root = new XElement("root");
             root.Add(new XElement("setting", new XAttribute("name", "ggufPath"), new XCData(Configs.GGUFPath)));
             root.Add(new XElement("setting", new XAttribute("name", "autoTranscribing"), Configs.AutoTranscribing));
+            root.Add(new XElement("setting", new XAttribute("name", "runtimeTranscribing"), Configs.RuntimeTranscribing));
             File.WriteAllText("config.xml", root.ToString());
         }
 
