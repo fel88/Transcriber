@@ -13,10 +13,10 @@ public sealed class WavPcmSource : PcmSource
 {
     private const int BytesPerSample = 2;
 
-    private readonly FileStream stream;
+    private readonly Stream stream;
     private readonly int channels;
 
-    private WavPcmSource(FileStream stream, long dataStart, int dataSize, int channels)
+    private WavPcmSource(Stream stream, long dataStart, int dataSize, int channels)
     {
         this.stream = stream;
         this.channels = channels;
@@ -43,6 +43,53 @@ public sealed class WavPcmSource : PcmSource
         {
             using var reader = new BinaryReader(stream, Encoding.ASCII, leaveOpen: true);
             if (stream.Length < 12)
+            {
+                return null;
+            }
+
+            string riff = ReadFourCC(reader);
+            _ = reader.ReadInt32();
+            string wave = ReadFourCC(reader);
+            if (riff != "RIFF" || wave != "WAVE")
+            {
+                return null;
+            }
+
+            (long dataStart, int dataSize, int channels) = WalkChunks(stream, reader);
+
+            if (channels <= 0)
+            {
+                return null;
+            }
+
+            return new WavPcmSource(stream, dataStart, dataSize, channels);
+        }
+        catch (Exception ex) when (ex is EndOfStreamException or ArgumentException or IOException
+                                      or UnauthorizedAccessException or NotSupportedException)
+        {
+            stream.Dispose();
+            return null;
+        }
+        catch (InvalidDataException)
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// /
+    /// </summary>
+    /// <param name="path"></param>
+    /// <returns></returns>
+    public static WavPcmSource? TryOpen(byte[] data)
+    {
+        MemoryStream stream = new MemoryStream(data);
+
+        try
+        {
+            var reader = new BinaryReader(stream);
+            if (data.Length < 12)
             {
                 return null;
             }

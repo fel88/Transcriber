@@ -272,6 +272,80 @@ public static class TranscribeCommand
             //return RunWithAudio(stdout, stderr, options, modelPath, choice, pcmSource);
         }
     }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="modelPath2"></param>
+    /// <param name="wave"></param>
+    /// <returns></returns>
+    /// <exception cref="ParakeetException"></exception>
+    public static string DecodeWavFile(string modelPath2, PcmSource wave)
+    {
+        CliOptions options = new CliOptions();
+
+        options.ModelSpec = modelPath2;
+        
+        // Everything that can be checked without a model is checked before the
+        // model is resolved: the input file and its flags (CliOptions), then the
+        // compute choice. A mistyped path, a bad option or an unavailable forced
+        // backend must not cost a 600+ MB download to find out.
+        Backends.InitDefault();
+
+        var devices = Backends.EnumerateDevices();
+        DeviceChoice? choice = DeviceSelection.Resolve(devices, options.Backend, options.DeviceIndex, out var deviceError);
+        if (choice is null)
+        {
+            throw new ParakeetException();
+        }
+
+        // A forced backend that this build/machine does not have fails here rather
+        // than silently landing on another one: the upstream returns ERR_BACKEND, and
+        // quietly using the CPU would misreport what actually ran.
+        if (choice.Device is null && options.Backend != BackendRequest.BackendAuto && !Backends.BackendAvailable(options.Backend))
+        {
+            throw new ParakeetException();
+        }
+
+        string modelPath = "";
+        try
+        {
+            modelPath = ModelStore.Resolve(options.ModelSpec, options.Quant, null);
+        }
+        catch (Exception ex) when (ex is IOException or HttpRequestException)
+        {
+            // Unknown alias/spec, download failure, checksum mismatch: report and stop.
+            //stderr.WriteLine(ex.Message);
+            throw new ParakeetException();
+        }
+
+        PcmSource pcmSource;
+        try
+        {
+            pcmSource = wave;
+        }
+        catch (Exception ex) when (ex is AudioLoadException or IOException or UnauthorizedAccessException)
+        {
+            // A file that is neither a readable WAV nor decodable by ffmpeg, or
+            // no ffmpeg at all: one line, not a .NET stack trace.
+
+            throw new ParakeetException();
+
+        }
+
+        // The audio is read one window at a time and never held whole: an hour
+        // is 219 MiB as a single float[], and none of it is needed at once. The
+        // source owns a temporary file when ffmpeg decoded the input, so it has
+        // to outlive the loop below.
+        using (pcmSource)
+        {
+            var res = Decode(options, modelPath, choice, pcmSource);
+
+            return res;
+            //return RunWithAudio(stdout, stderr, options, modelPath, choice, pcmSource);
+        }
+    }
+
     private static int RunCore(string[] args, TextWriter stdout, TextWriter stderr)
     {
         // Flags answered without touching the model or the network.

@@ -26,7 +26,7 @@ public abstract class PcmSource : IDisposable
     /// Reads exactly <paramref name="destination"/>.Length bytes at
     /// <paramref name="fileOffset"/>, throwing if the file is shorter.
     /// </summary>
-    protected static void ReadExactlyAt(FileStream stream, long fileOffset, Span<byte> destination)
+    protected static void ReadExactlyAt(Stream stream, long fileOffset, Span<byte> destination)
     {
         stream.Position = fileOffset;
         while (!destination.IsEmpty)

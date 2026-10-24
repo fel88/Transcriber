@@ -1,6 +1,7 @@
 using Microsoft.VisualBasic;
 using NAudio.Wave;
 using System.Xml.Linq;
+using TranscribeCppSharp.Audio;
 using TranscribeCppSharp.Cli;
 
 namespace Transcriber
@@ -68,12 +69,15 @@ namespace Transcriber
             if (Configs.AutoTranscribing)
             {
                 var data = rec.Stream.ToArray();
-                using (WaveFileWriter writer = new WaveFileWriter("123.wav", rec.WaveFormat))
+                                
+
+                MemoryStream ms = new MemoryStream();
+                using (WaveFileWriter writer = new WaveFileWriter(ms, rec.WaveFormat))
                 {
                     writer.Write(data, 0, data.Length);
                 }
 
-                res = TranscribeCommand.DecodeWavFile(Configs.GGUFPath, "123.wav");
+                res = TranscribeCommand.DecodeWavFile(Configs.GGUFPath, WavPcmSource.TryOpen(ms.ToArray()));
             }
 
             listView1.Items.Add(new ListViewItem(new string[] { DateTime.Now.ToShortTimeString(), SizeSuffix(rec.Stream.Length), res }) { Tag = rec.Stream.ToArray() });
@@ -130,12 +134,13 @@ namespace Transcriber
             var lvi = listView1.SelectedItems[0];
             var data = lvi.Tag as byte[];
 
-            using (WaveFileWriter writer = new WaveFileWriter("123.wav", rec.WaveFormat))
+            MemoryStream ms = new MemoryStream();
+            using (WaveFileWriter writer = new WaveFileWriter(ms, rec.WaveFormat))
             {
                 writer.Write(data, 0, data.Length);
             }
 
-            var res = TranscribeCommand.DecodeWavFile(Configs.GGUFPath, "123.wav");
+            var res = TranscribeCommand.DecodeWavFile(Configs.GGUFPath, WavPcmSource.TryOpen(ms.ToArray()));
             lvi.SubItems[2].Text = res;
         }
 
