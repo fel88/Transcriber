@@ -61,7 +61,22 @@ namespace Transcriber
             rec.StartRecording();
         }
 
-        private void toolStripButton2_Click(object sender, EventArgs e)
+        static async Task<string> DecodeRawWav(byte[] data, WaveFormat format)
+        {
+            MemoryStream ms = new MemoryStream();
+            using (WaveFileWriter writer = new WaveFileWriter(ms, format))
+            {
+                writer.Write(data, 0, data.Length);
+            }
+
+            return await Task.Run(() =>
+            {
+                return TranscribeCommand.DecodeWavFile(Configs.GGUFPath, WavPcmSource.TryOpen(ms.ToArray()));
+            });
+            
+        }
+
+        private async void toolStripButton2_Click(object sender, EventArgs e)
         {
             toolStripStatusLabel1.Text = "Stopped";
             rec.StopRecording();
@@ -69,15 +84,7 @@ namespace Transcriber
             if (Configs.AutoTranscribing)
             {
                 var data = rec.Stream.ToArray();
-                                
-
-                MemoryStream ms = new MemoryStream();
-                using (WaveFileWriter writer = new WaveFileWriter(ms, rec.WaveFormat))
-                {
-                    writer.Write(data, 0, data.Length);
-                }
-
-                res = TranscribeCommand.DecodeWavFile(Configs.GGUFPath, WavPcmSource.TryOpen(ms.ToArray()));
+                res = await DecodeRawWav(data, rec.WaveFormat);
             }
 
             listView1.Items.Add(new ListViewItem(new string[] { DateTime.Now.ToShortTimeString(), SizeSuffix(rec.Stream.Length), res }) { Tag = rec.Stream.ToArray() });
@@ -126,21 +133,14 @@ namespace Transcriber
             SaveConfig();
         }
 
-        private void transcribeToolStripMenuItem_Click(object sender, EventArgs e)
+        private async void transcribeToolStripMenuItem_Click(object sender, EventArgs e)
         {
             if (listView1.SelectedItems.Count == 0)
                 return;
 
             var lvi = listView1.SelectedItems[0];
             var data = lvi.Tag as byte[];
-
-            MemoryStream ms = new MemoryStream();
-            using (WaveFileWriter writer = new WaveFileWriter(ms, rec.WaveFormat))
-            {
-                writer.Write(data, 0, data.Length);
-            }
-
-            var res = TranscribeCommand.DecodeWavFile(Configs.GGUFPath, WavPcmSource.TryOpen(ms.ToArray()));
+            var res = await DecodeRawWav(data, rec.WaveFormat);
             lvi.SubItems[2].Text = res;
         }
 
@@ -152,6 +152,7 @@ namespace Transcriber
             var lvi = listView1.SelectedItems[0];
             Clipboard.SetText(lvi.SubItems[2].Text);
         }
+
         static readonly string[] SizeSuffixes =
                   { "bytes", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
 
@@ -169,18 +170,46 @@ namespace Transcriber
 
             return string.Format("{0:n" + decimalPlaces + "} {1}", dValue, SizeSuffixes[i]);
         }
+
         private void deleteToolStripMenuItem_Click(object sender, EventArgs e)
         {
-
             if (listView1.SelectedItems.Count == 0)
                 return;
 
+            List<ListViewItem> toDel = new List<ListViewItem>();
             for (int i = 0; i < listView1.SelectedItems.Count; i++)
-            {
+            {                
                 var lvi = listView1.SelectedItems[i];
-                listView1.Items.Remove(lvi);
+                toDel.Add(lvi);
+                
             }
-            
+            foreach (var item in toDel)
+            {
+                listView1.Items.Remove(item);
+            }
+        }
+
+        public static (byte[] Data, WaveFormat Format) GetRawAudioBytes(string wavFilePath)
+        {
+            using (var reader = new WaveFileReader(wavFilePath))
+            {
+                byte[] buffer = new byte[reader.Length];
+                reader.Read(buffer, 0, buffer.Length);
+
+                return (buffer, reader.WaveFormat);
+            }
+        }
+
+        private async void toolStripButton4_Click(object sender, EventArgs e)
+        {
+            OpenFileDialog ofd = new OpenFileDialog();
+            ofd.Filter = "Wav files (*.wav)|*.wav";
+            if (ofd.ShowDialog() != DialogResult.OK)
+                return;
+
+            var result = GetRawAudioBytes(ofd.FileName);
+            var res = await DecodeRawWav(result.Data, result.Format);
+            listView1.Items.Add(new ListViewItem(new string[] { DateTime.Now.ToShortTimeString(), SizeSuffix(result.Data.Length), res }) { Tag = result.Data });
         }
     }
 }

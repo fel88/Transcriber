@@ -45,6 +45,7 @@
             toolStripButton3 = new ToolStripButton();
             statusStrip1 = new StatusStrip();
             toolStripStatusLabel1 = new ToolStripStatusLabel();
+            toolStripButton4 = new ToolStripButton();
             contextMenuStrip1.SuspendLayout();
             toolStrip1.SuspendLayout();
             statusStrip1.SuspendLayout();
@@ -127,7 +128,7 @@
             // 
             // toolStrip1
             // 
-            toolStrip1.Items.AddRange(new ToolStripItem[] { toolStripButton1, toolStripButton2, toolStripButton3 });
+            toolStrip1.Items.AddRange(new ToolStripItem[] { toolStripButton1, toolStripButton2, toolStripButton3, toolStripButton4 });
             toolStrip1.Location = new Point(0, 0);
             toolStrip1.Name = "toolStrip1";
             toolStrip1.Size = new Size(800, 25);
@@ -177,6 +178,15 @@
             toolStripStatusLabel1.Size = new Size(13, 17);
             toolStripStatusLabel1.Text = "..";
             // 
+            // toolStripButton4
+            // 
+            toolStripButton4.Image = Properties.Resources.music_beam;
+            toolStripButton4.ImageTransparentColor = Color.Magenta;
+            toolStripButton4.Name = "toolStripButton4";
+            toolStripButton4.Size = new Size(72, 22);
+            toolStripButton4.Text = "Load file";
+            toolStripButton4.Click += toolStripButton4_Click;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
@@ -214,5 +224,6 @@
         private ToolStripMenuItem deleteToolStripMenuItem;
         private StatusStrip statusStrip1;
         private ToolStripStatusLabel toolStripStatusLabel1;
+        private ToolStripButton toolStripButton4;
     }
 }

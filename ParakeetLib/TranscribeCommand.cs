@@ -520,7 +520,8 @@ public static class TranscribeCommand
 
         //     stdout.WriteLine($"diarization supported: {model.Supports(Feature.FeatureDiarization)}");
 
-        using var session = model.CreateSession();
+        using var session = model.CreateSession();        
+        
         var limits = session.GetLimits();
         int maxWindowMs = limits.EffectiveMaxAudioMs > 0
             ? (int)Math.Clamp(limits.EffectiveMaxAudioMs - WindowPlanner.OverlapMs, 1, int.MaxValue)
