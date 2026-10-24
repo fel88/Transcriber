@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>true</IsPackable>
+    <IsLibrary>true</IsLibrary>
+    <PackageId>TranscribeCppSharp.Interop</PackageId>
+
+    <!-- CS1591 (missing XML doc) is not enforced here: NativeMethods.cs is
+         auto-generated and carries the upstream doc verbatim for every
+         declaration the C header documents, but enums values / struct fields
+         that the header documents only in bulk would require invented prose.
+         Per the project principle (no unverified claims), we omit rather than
+         fabricate. The hand-written wrapper enforces full doc coverage. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <WarningsAsErrors>
+      SYSLIB1051;
+      SYSLIB1054;
+      SYSLIB1055;
+    </WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Import Include="System.Runtime.InteropServices" />
+   
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Update="Microsoft.SourceLink.GitHub" Version="10.0.402" />
+  </ItemGroup>
+
+  <!-- This is the platform-agnostic "core": it never depends on the native
+       runtime packages. Consumers pick the native package for their RID (or the
+       TranscribeCppSharp.Bundle meta-package that pulls them all), which keeps
+       installs minimal — the previous behavior pulled all five RIDs (~200 MB)
+       for every consumer. At build time the DllImportResolver (NativeResolver.cs)
+       locates the binaries, so ordinary builds need no native package. -->
+</Project>

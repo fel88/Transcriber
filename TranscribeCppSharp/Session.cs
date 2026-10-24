@@ -1,0 +1,689 @@
+namespace TranscribeCppSharp;
+
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Threading;
+using TranscribeCppSharp.Interop;
+
+/// <summary>
+/// A transcription session bound to a model. Disposing this frees the native session.
+/// Not thread-safe: use multiple sessions or synchronize access for concurrency.
+/// </summary>
+/// <remarks>
+/// The session keeps its parent <see cref="Model"/> alive for the session's lifetime.
+/// Do not dispose the model before all sessions created from it.
+/// </remarks>
+public sealed class Session : IDisposable
+{
+    // Unread by design: rooting the parent Model for the session's lifetime so
+    // it is not GC'd while the native session still references it. See class remarks.
+    // NOSONAR S4487
+    private readonly Model model;
+    private readonly SessionHandle handle;
+
+    /// <summary>The status of the last native run, for the result it left behind.</summary>
+    private Status lastRunStatus = Status.Ok;
+
+    private Session(SessionHandle handle, Model model)
+    {
+        this.handle = handle;
+        this.model = model;
+    }
+
+    internal static Session Create(ModelHandle modelHandle, Model model, Action<SessionParamsBuilder>? configure = null)
+    {
+        using var sessionParams = new SessionParamsBuilder();
+        configure?.Invoke(sessionParams);
+
+        var outSession = Marshal.AllocHGlobal(IntPtr.Size);
+        try
+        {
+            var status = NativeMethods.SessionInit(modelHandle, sessionParams.Build(), outSession);
+            if (status != Status.Ok)
+            {
+                throw new TranscribeException(status, nameof(NativeMethods.SessionInit));
+            }
+
+            var handle = new SessionHandle(Marshal.ReadIntPtr(outSession));
+            return new Session(handle, model);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(outSession);
+        }
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(disposed, this);
+    }
+
+    private bool disposed;
+
+    /// <summary>Create a streaming session bound to this session handle.</summary>
+    public StreamSession CreateStream()
+    {
+        ThrowIfDisposed();
+        return new StreamSession(handle, this);
+    }
+
+    /// <summary>
+    /// Transcribe a PCM buffer (16 kHz mono f32, samples in [-1, 1]).
+    /// Returns a Transcript whose FullText, RawText, DetectedLanguage, Segments,
+    /// Words, Tokens and SpeakerSegments are all already read out of the native
+    /// result. ReadSegments(), ReadWords() and ReadTokens() re-read those same
+    /// rows from the native session, so on the Transcript this method returns
+    /// they are redundant work: measured at 566 ns per row, 2.0 µs for the four
+    /// readers together on a 3-segment result, against seconds of inference.
+    /// Supports cancellation via <paramref name="ct"/>.
+    /// </summary>
+    public Transcript Run(ReadOnlySpan<float> pcm, Action<RunParamsBuilder>? configure = null, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        if (ct.CanBeCanceled)
+        {
+            var previousCallback = abortCallback;
+            SetAbortToken(ct);
+            try
+            {
+                RunNative(pcm, configure);
+            }
+            catch (TranscribeException ex) when (ex.StatusCode == Status.ErrAborted)
+            {
+                throw new OperationCanceledException(ct);
+            }
+            finally
+            {
+                if (previousCallback != null)
+                {
+                    SetAbortCallback(previousCallback);
+                }
+                else
+                {
+                    ClearAbortCallback();
+                }
+            }
+        }
+        else
+        {
+            RunNative(pcm, configure);
+        }
+
+        return ReadResults();
+    }
+
+    /// <summary>Get the full transcription text after a run.</summary>
+    public string FullText
+    {
+        get
+        {
+            ThrowIfDisposed();
+            var ptr = NativeMethods.FullText(handle);
+            var result = ptr == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
+            GC.KeepAlive(this);
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// The model's decoded output before family post-processing (inline
+    /// diarization markers, tags, … still present). Empty before any run.
+    /// </summary>
+    public string RawText
+    {
+        get
+        {
+            ThrowIfDisposed();
+            var ptr = NativeMethods.RawText(handle);
+            var result = ptr == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
+            GC.KeepAlive(this);
+            return result;
+        }
+    }
+
+    /// <summary>Number of speaker segments in the last result (0 when diarization did not run).</summary>
+    public int SpeakerSegmentCount
+    {
+        get
+        {
+            ThrowIfDisposed();
+            var count = NativeMethods.NSpeakerSegments(handle);
+            GC.KeepAlive(this);
+            return count;
+        }
+    }
+
+    /// <summary>Number of segments in the last result.</summary>
+    public int SegmentCount
+    {
+        get
+        {
+            ThrowIfDisposed();
+            var count = NativeMethods.NSegments(handle);
+            GC.KeepAlive(this);
+            return count;
+        }
+    }
+
+    /// <summary>Number of words in the last result.</summary>
+    public int WordCount
+    {
+        get
+        {
+            ThrowIfDisposed();
+            var count = NativeMethods.NWords(handle);
+            GC.KeepAlive(this);
+            return count;
+        }
+    }
+
+    /// <summary>Number of tokens in the last result.</summary>
+    public int TokenCount
+    {
+        get
+        {
+            ThrowIfDisposed();
+            var count = NativeMethods.NTokens(handle);
+            GC.KeepAlive(this);
+            return count;
+        }
+    }
+
+    /// <summary>Check if the session was aborted.</summary>
+    public bool WasAborted
+    {
+        get
+        {
+            ThrowIfDisposed();
+            var result = NativeMethods.WasAborted(handle);
+            GC.KeepAlive(this);
+            return result;
+        }
+    }
+
+    /// <summary>Check if the output was truncated due to buffer limits.</summary>
+    public bool WasTruncated
+    {
+        get
+        {
+            ThrowIfDisposed();
+            var result = NativeMethods.WasTruncated(handle);
+            GC.KeepAlive(this);
+            return result;
+        }
+    }
+
+    /// <summary>Get the kind of timestamps returned by the session.</summary>
+    public TimestampKind ReturnedTimestampKind
+    {
+        get
+        {
+            ThrowIfDisposed();
+            var result = NativeMethods.ReturnedTimestampKind(handle);
+            GC.KeepAlive(this);
+            return result;
+        }
+    }
+
+    /// <summary>Resource limits for this session.</summary>
+    public record SessionLimitsInfo(int EffectiveNCtx, long EffectiveMaxAudioMs, long MaxKvBytes);
+
+    /// <summary>Get resource limits for this session.</summary>
+    public SessionLimitsInfo GetLimits()
+    {
+        ThrowIfDisposed();
+        var size = (int)NativeMethods.AbiStructSize(AbiStruct.AbiSessionLimits);
+        return StackAllocHelper.RunWithBuffer(size, ptr =>
+        {
+            NativeMethods.SessionLimitsInit(ptr);
+            var status = NativeMethods.SessionGetLimits(handle, ptr);
+            if (status != Status.Ok)
+            {
+                throw new TranscribeException(status, nameof(NativeMethods.SessionGetLimits));
+            }
+
+            var limits = Marshal.PtrToStructure<SessionLimits>(ptr);
+            return new SessionLimitsInfo(
+                EffectiveNCtx: limits.effectiveNCtx,
+                EffectiveMaxAudioMs: limits.effectiveMaxAudioMs,
+                MaxKvBytes: limits.maxKvBytes);
+        });
+    }
+
+    /// <summary>Reset timing statistics for this session.</summary>
+    public void ResetTimings()
+    {
+        ThrowIfDisposed();
+        NativeMethods.ResetTimings(handle);
+    }
+
+    /// <summary>Read segments from the last run result.</summary>
+    public IReadOnlyList<SegmentResult> ReadSegments()
+    {
+        ThrowIfDisposed();
+        return ReadItems<Segment, SegmentResult>(
+            count: NativeMethods.NSegments(handle),
+            abi: AbiStruct.AbiSegment,
+            init: NativeMethods.SegmentInit,
+            get: (i, ptr) => NativeMethods.GetSegment(handle, i, ptr),
+            getMethodName: nameof(NativeMethods.GetSegment),
+            map: static seg => new SegmentResult(
+                Start: TimeSpan.FromMilliseconds(seg.t0Ms),
+                End: TimeSpan.FromMilliseconds(seg.t1Ms),
+                Text: Marshal.PtrToStringUTF8(seg.text) ?? string.Empty,
+                SpeakerId: seg.speakerId));
+    }
+
+    /// <summary>Read speaker segments from the last run result (empty when diarization did not run).</summary>
+    public IReadOnlyList<SpeakerSegmentResult> ReadSpeakerSegments()
+    {
+        ThrowIfDisposed();
+        return ReadItems<SpeakerSegment, SpeakerSegmentResult>(
+            count: NativeMethods.NSpeakerSegments(handle),
+            abi: AbiStruct.AbiSpeakerSegment,
+            init: NativeMethods.SpeakerSegmentInit,
+            get: (i, ptr) => NativeMethods.GetSpeakerSegment(handle, i, ptr),
+            getMethodName: nameof(NativeMethods.GetSpeakerSegment),
+            map: static seg => new SpeakerSegmentResult(
+                Start: TimeSpan.FromMilliseconds(seg.t0Ms),
+                End: TimeSpan.FromMilliseconds(seg.t1Ms),
+                SpeakerId: seg.speakerId,
+                Probability: seg.p));
+    }
+
+    /// <summary>Read words from the last run result.</summary>
+    public IReadOnlyList<WordResult> ReadWords()
+    {
+        ThrowIfDisposed();
+        return ReadItems<Word, WordResult>(
+            count: NativeMethods.NWords(handle),
+            abi: AbiStruct.AbiWord,
+            init: NativeMethods.WordInit,
+            get: (i, ptr) => NativeMethods.GetWord(handle, i, ptr),
+            getMethodName: nameof(NativeMethods.GetWord),
+            map: static w => new WordResult(
+                Start: TimeSpan.FromMilliseconds(w.t0Ms),
+                End: TimeSpan.FromMilliseconds(w.t1Ms),
+                Text: Marshal.PtrToStringUTF8(w.text) ?? string.Empty));
+    }
+
+    /// <summary>Read tokens from the last run result.</summary>
+    public IReadOnlyList<TokenResult> ReadTokens()
+    {
+        ThrowIfDisposed();
+        return ReadItems<Token, TokenResult>(
+            count: NativeMethods.NTokens(handle),
+            abi: AbiStruct.AbiToken,
+            init: NativeMethods.TokenInit,
+            get: (i, ptr) => NativeMethods.GetToken(handle, i, ptr),
+            getMethodName: nameof(NativeMethods.GetToken),
+            map: static t => new TokenResult(
+                Id: t.id,
+                Probability: t.p,
+                Start: TimeSpan.FromMilliseconds(t.t0Ms),
+                End: TimeSpan.FromMilliseconds(t.t1Ms),
+                Text: Marshal.PtrToStringUTF8(t.text) ?? string.Empty));
+    }
+
+    /// <summary>Print timing information to the log.</summary>
+    public void PrintTimings()
+    {
+        ThrowIfDisposed();
+        NativeMethods.PrintTimings(handle);
+    }
+
+    /// <summary>
+    /// Set a cancellation callback. Return true from the callback to abort transcription.
+    /// The callback is invoked periodically during long-running operations.
+    /// </summary>
+    public void SetAbortCallback(Func<bool> abortCallback)
+    {
+        ThrowIfDisposed();
+        this.abortCallback = abortCallback ?? throw new ArgumentNullException(nameof(abortCallback));
+        abortToken = CancellationToken.None;
+        abortUsesToken = false;
+        var cb = EnsureInteropCallback();
+        NativeMethods.SetAbortCallback(handle, cb, IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// Install <paramref name="ct"/> as the abort source, without allocating a
+    /// closure for it.
+    /// </summary>
+    /// <remarks>
+    /// A cancellable <see cref="Run"/> used to call
+    /// <c>SetAbortCallback(() =&gt; ct.IsCancellationRequested)</c>, which
+    /// allocated a closure over <paramref name="ct"/> on every call, and
+    /// <see cref="SetAbortCallback"/> then allocated a second delegate to wrap
+    /// it — two allocations per cancellable run. Storing the token and having
+    /// the single interop delegate read it removes both. The delegate itself is
+    /// created once per session and reused, so a repeated cancellable loop
+    /// allocates nothing here.
+    /// </remarks>
+    internal void SetAbortToken(CancellationToken ct)
+    {
+        ThrowIfDisposed();
+        abortToken = ct;
+        abortUsesToken = true;
+        abortCallback = null;
+        var cb = EnsureInteropCallback();
+        NativeMethods.SetAbortCallback(handle, cb, IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// The single interop delegate this session registers with the native side,
+    /// created on first use and then reused. It is rooted for the session's
+    /// lifetime because the native library holds the pointer to it.
+    /// </summary>
+    private AbortCallback EnsureInteropCallback()
+    {
+        return interopAbortCallback ??= new AbortCallback(InvokeAbortCallback);
+    }
+
+    /// <summary>
+    /// The body the native library calls to ask whether to abort. Reads the
+    /// current source on every call, so switching between a user callback and a
+    /// token does not need a new delegate.
+    /// </summary>
+    private bool InvokeAbortCallback(IntPtr userdata)
+    {
+        _ = userdata;
+        if (abortUsesToken)
+        {
+            return abortToken.IsCancellationRequested;
+        }
+
+        return abortCallback?.Invoke() ?? false;
+    }
+
+    /// <summary>
+    /// Clear the cancellation callback.
+    /// </summary>
+    public void ClearAbortCallback()
+    {
+        ThrowIfDisposed();
+
+        // Register a callback that always returns false to disable abort checks
+        // while keeping the delegate rooted. It is the same delegate instance
+        // for the whole session, so clearing does not allocate either.
+        abortCallback = null;
+        abortToken = CancellationToken.None;
+        abortUsesToken = false;
+        var cb = EnsureInteropCallback();
+        NativeMethods.SetAbortCallback(handle, cb, IntPtr.Zero);
+    }
+
+    /// <summary>
+    /// Get the current abort callback, if any. Null when the abort source is a
+    /// <see cref="CancellationToken"/> installed by a cancellable run rather
+    /// than a user callback.
+    /// </summary>
+    internal Func<bool>? GetAbortCallback()
+    {
+        return abortUsesToken ? null : abortCallback;
+    }
+
+    private Func<bool>? abortCallback;
+    private CancellationToken abortToken;
+    private bool abortUsesToken;
+    private AbortCallback? interopAbortCallback;
+
+    /// <summary>
+    /// Internal method for batch transcription with proper thread-safety.
+    /// </summary>
+    internal Status RunBatchInternal(IntPtr pcmPtrArray, IntPtr sampleCountArray, int n, IntPtr runParams)
+    {
+        ThrowIfDisposed();
+        return NativeMethods.RunBatch(handle, pcmPtrArray, sampleCountArray, n, runParams);
+    }
+
+    /// <summary>
+    /// Get the number of batch results.
+    /// </summary>
+    internal int GetBatchResultCount()
+    {
+        ThrowIfDisposed();
+        return NativeMethods.BatchNResults(handle);
+    }
+
+    /// <summary>
+    /// Get the status of a batch result.
+    /// </summary>
+    internal Status GetBatchResultStatus(int index)
+    {
+        ThrowIfDisposed();
+        return NativeMethods.BatchStatus(handle, index);
+    }
+
+    /// <summary>
+    /// Get the full text of a batch result.
+    /// </summary>
+    internal string GetBatchResultFullText(int index)
+    {
+        ThrowIfDisposed();
+        var ptr = NativeMethods.BatchFullText(handle, index);
+        return ptr == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Get the detected language of a batch result.
+    /// </summary>
+    internal string GetBatchResultDetectedLanguage(int index)
+    {
+        ThrowIfDisposed();
+        var ptr = NativeMethods.BatchDetectedLanguage(handle, index);
+        return ptr == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
+    }
+
+    internal IReadOnlyList<SegmentResult> GetBatchSegments(int batchIndex)
+    {
+        ThrowIfDisposed();
+        return ReadItems<Segment, SegmentResult>(
+            count: NativeMethods.BatchNSegments(handle, batchIndex),
+            abi: AbiStruct.AbiSegment,
+            init: NativeMethods.SegmentInit,
+            get: (j, ptr) => NativeMethods.BatchGetSegment(handle, batchIndex, j, ptr),
+            getMethodName: nameof(NativeMethods.BatchGetSegment),
+            map: static seg => new SegmentResult(
+                Start: TimeSpan.FromMilliseconds(seg.t0Ms),
+                End: TimeSpan.FromMilliseconds(seg.t1Ms),
+                Text: Marshal.PtrToStringUTF8(seg.text) ?? string.Empty,
+                SpeakerId: seg.speakerId));
+    }
+
+    /// <summary>Get the per-utterance raw text of a batch result.</summary>
+    internal string GetBatchResultRawText(int index)
+    {
+        ThrowIfDisposed();
+        var ptr = NativeMethods.BatchRawText(handle, index);
+        return ptr == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
+    }
+
+    internal IReadOnlyList<SpeakerSegmentResult> GetBatchSpeakerSegments(int batchIndex)
+    {
+        ThrowIfDisposed();
+        return ReadItems<SpeakerSegment, SpeakerSegmentResult>(
+            count: NativeMethods.BatchNSpeakerSegments(handle, batchIndex),
+            abi: AbiStruct.AbiSpeakerSegment,
+            init: NativeMethods.SpeakerSegmentInit,
+            get: (j, ptr) => NativeMethods.BatchGetSpeakerSegment(handle, batchIndex, j, ptr),
+            getMethodName: nameof(NativeMethods.BatchGetSpeakerSegment),
+            map: static seg => new SpeakerSegmentResult(
+                Start: TimeSpan.FromMilliseconds(seg.t0Ms),
+                End: TimeSpan.FromMilliseconds(seg.t1Ms),
+                SpeakerId: seg.speakerId,
+                Probability: seg.p));
+    }
+
+    internal IReadOnlyList<WordResult> GetBatchWords(int batchIndex)
+    {
+        ThrowIfDisposed();
+        return ReadItems<Word, WordResult>(
+            count: NativeMethods.BatchNWords(handle, batchIndex),
+            abi: AbiStruct.AbiWord,
+            init: NativeMethods.WordInit,
+            get: (j, ptr) => NativeMethods.BatchGetWord(handle, batchIndex, j, ptr),
+            getMethodName: nameof(NativeMethods.BatchGetWord),
+            map: static w => new WordResult(
+                Start: TimeSpan.FromMilliseconds(w.t0Ms),
+                End: TimeSpan.FromMilliseconds(w.t1Ms),
+                Text: Marshal.PtrToStringUTF8(w.text) ?? string.Empty));
+    }
+
+    internal IReadOnlyList<TokenResult> GetBatchTokens(int batchIndex)
+    {
+        ThrowIfDisposed();
+        return ReadItems<Token, TokenResult>(
+            count: NativeMethods.BatchNTokens(handle, batchIndex),
+            abi: AbiStruct.AbiToken,
+            init: NativeMethods.TokenInit,
+            get: (j, ptr) => NativeMethods.BatchGetToken(handle, batchIndex, j, ptr),
+            getMethodName: nameof(NativeMethods.BatchGetToken),
+            map: static t => new TokenResult(
+                Id: t.id,
+                Probability: t.p,
+                Start: TimeSpan.FromMilliseconds(t.t0Ms),
+                End: TimeSpan.FromMilliseconds(t.t1Ms),
+                Text: Marshal.PtrToStringUTF8(t.text) ?? string.Empty));
+    }
+
+    internal SessionHandle Handle => handle;
+
+    internal TimingsResult? GetBatchTimings(int batchIndex)
+    {
+        ThrowIfDisposed();
+        var timingsSize = (int)NativeMethods.AbiStructSize(AbiStruct.AbiTimings);
+        TimingsResult? result = null;
+        StackAllocHelper.RunWithBuffer(timingsSize, timingsPtr =>
+        {
+            NativeMethods.TimingsInit(timingsPtr);
+            if (NativeMethods.BatchGetTimings(handle, batchIndex, timingsPtr) == Status.Ok)
+            {
+                var t = Marshal.PtrToStructure<Timings>(timingsPtr);
+                result = new TimingsResult(t.loadMs, t.melMs, t.encodeMs, t.decodeMs);
+            }
+        });
+        return result;
+    }
+
+    private void RunNative(ReadOnlySpan<float> pcm, Action<RunParamsBuilder>? configure)
+    {
+        ThrowIfDisposed();
+
+        using var runParams = new RunParamsBuilder();
+        configure?.Invoke(runParams);
+
+        var status = NativeMethods.Run(handle, pcm, pcm.Length, runParams.Build());
+        lastRunStatus = status;
+
+        // OUTPUT_TRUNCATED and OUTPUT_REPETITION are result-bearing: the native
+        // call preserved the partial transcript and set was_truncated. Throwing
+        // here discarded a valid result and made the stop look like a failure.
+        if (status != Status.Ok && !IsResultBearing(status))
+        {
+            throw new TranscribeException(status, nameof(Run));
+        }
+    }
+
+    /// <summary>
+    /// Whether a status leaves a readable result behind instead of meaning "no
+    /// result". These are the two stops the native API documents as
+    /// result-bearing; every other non-OK status is a failure.
+    /// </summary>
+    internal static bool IsResultBearing(Status status)
+        => status is Status.ErrOutputTruncated or Status.ErrOutputRepetition;
+
+    private Transcript ReadResults()
+    {
+        var timings = ReadTimings();
+        var langPtr = NativeMethods.DetectedLanguage(handle);
+        var lang = langPtr == IntPtr.Zero ? string.Empty : Marshal.PtrToStringUTF8(langPtr) ?? string.Empty;
+
+        var segments = ReadSegments();
+        var words = ReadWords();
+        var tokens = ReadTokens();
+        var speakerSegments = ReadSpeakerSegments();
+
+        return new Transcript
+        {
+            FullText = FullText,
+            RawText = RawText,
+            DetectedLanguage = lang,
+            WasAborted = WasAborted,
+            WasTruncated = WasTruncated,
+            StatusCode = lastRunStatus,
+            Timing = timings,
+            Segments = segments,
+            Words = words,
+            Tokens = tokens,
+            SpeakerSegments = speakerSegments,
+        };
+    }
+
+    private TimingsResult? ReadTimings()
+    {
+        var timingsSize = (int)NativeMethods.AbiStructSize(AbiStruct.AbiTimings);
+        TimingsResult? result = null;
+        StackAllocHelper.RunWithBuffer(timingsSize, timingsPtr =>
+        {
+            NativeMethods.TimingsInit(timingsPtr);
+            if (NativeMethods.GetTimings(handle, timingsPtr) == Status.Ok)
+            {
+                var t = Marshal.PtrToStructure<Timings>(timingsPtr);
+                result = new TimingsResult(t.loadMs, t.melMs, t.encodeMs, t.decodeMs);
+            }
+        });
+        return result;
+    }
+
+    /// <summary>
+    /// Fetch <paramref name="count"/> items of native type <typeparamref name="TNative"/>
+    /// into a fresh buffer (one init + fetch per index) and map each to the managed
+    /// result type <typeparamref name="TResult"/>. Shared by the session and batch
+    /// readers to avoid six copies of the same loop.
+    /// </summary>
+    private static List<TResult> ReadItems<TNative, TResult>(
+        int count,
+        AbiStruct abi,
+        Action<IntPtr> init,
+        Func<int, IntPtr, Status> get,
+        string getMethodName,
+        Func<TNative, TResult> map)
+        where TNative : struct
+    {
+        var results = new List<TResult>(count);
+        if (count == 0)
+        {
+            return results;
+        }
+
+        var size = (int)NativeMethods.AbiStructSize(abi);
+        StackAllocHelper.RunWithBuffer(size, ptr =>
+        {
+            for (int i = 0; i < count; i++)
+            {
+                init(ptr);
+                var status = get(i, ptr);
+                if (status != Status.Ok)
+                {
+                    throw new TranscribeException(status, getMethodName);
+                }
+
+                results.Add(map(Marshal.PtrToStructure<TNative>(ptr)));
+            }
+        });
+        return results;
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        if (!disposed)
+        {
+            handle.Dispose();
+            disposed = true;
+        }
+    }
+}

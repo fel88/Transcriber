@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net9.0": {
+      "transcribecppsharp": {
+        "type": "Project",
+        "dependencies": {
+          "TranscribeCppSharp.Interop": "[1.0.0, )"
+        }
+      },
+      "transcribecppsharp.interop": {
+        "type": "Project"
+      },
+      "transcriber.common": {
+        "type": "Project",
+        "dependencies": {
+          "TranscribeCppSharp": "[1.0.0, )"
+        }
+      }
+    }
+  }
+}
