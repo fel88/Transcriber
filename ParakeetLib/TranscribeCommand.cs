@@ -7,6 +7,7 @@
 
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Runtime.Serialization;
 using System.Text;
 using TranscribeCppSharp.Audio;
@@ -182,7 +183,7 @@ public static class TranscribeCommand
     public static int Run(string[] args, TextWriter stdout, TextWriter stderr)
     {
         try
-        {            
+        {
             return RunCore(args, stdout, stderr);
         }
         catch (Exception ex)
@@ -231,7 +232,7 @@ public static class TranscribeCommand
         // quietly using the CPU would misreport what actually ran.
         if (choice.Device is null && options.Backend != BackendRequest.BackendAuto && !Backends.BackendAvailable(options.Backend))
         {
-            throw new ParakeetException();            
+            throw new ParakeetException();
         }
 
         string modelPath = "";
@@ -243,7 +244,7 @@ public static class TranscribeCommand
         {
             // Unknown alias/spec, download failure, checksum mismatch: report and stop.
             //stderr.WriteLine(ex.Message);
-            throw new ParakeetException();            
+            throw new ParakeetException();
         }
 
         PcmSource pcmSource;
@@ -255,7 +256,7 @@ public static class TranscribeCommand
         {
             // A file that is neither a readable WAV nor decodable by ffmpeg, or
             // no ffmpeg at all: one line, not a .NET stack trace.
-            
+
             throw new ParakeetException();
 
         }
@@ -267,7 +268,7 @@ public static class TranscribeCommand
         using (pcmSource)
         {
             var res = Decode(options, modelPath, choice, pcmSource);
-            
+
             return res;
             //return RunWithAudio(stdout, stderr, options, modelPath, choice, pcmSource);
         }
@@ -285,7 +286,7 @@ public static class TranscribeCommand
         CliOptions options = new CliOptions();
 
         options.ModelSpec = modelPath2;
-        
+
         // Everything that can be checked without a model is checked before the
         // model is resolved: the input file and its flags (CliOptions), then the
         // compute choice. A mistyped path, a bad option or an unavailable forced
@@ -345,7 +346,7 @@ public static class TranscribeCommand
             //return RunWithAudio(stdout, stderr, options, modelPath, choice, pcmSource);
         }
     }
-
+ 
     private static int RunCore(string[] args, TextWriter stdout, TextWriter stderr)
     {
         // Flags answered without touching the model or the network.
@@ -358,7 +359,7 @@ public static class TranscribeCommand
         if (Has(args, "--debugger"))
         {
             Debugger.Launch();
-            Debugger.Break();            
+            Debugger.Break();
         }
 
         if (Has(args, "--model-info"))
@@ -476,10 +477,47 @@ public static class TranscribeCommand
         {
         }
 
-           }
+    }
 
-    private static string Decode(    
-     
+
+    public static Model LoadModel(string modelPath)
+    {
+        CliOptions options = new CliOptions();
+        // Everything that can be checked without a model is checked before the
+        // model is resolved: the input file and its flags (CliOptions), then the
+        // compute choice. A mistyped path, a bad option or an unavailable forced
+        // backend must not cost a 600+ MB download to find out.
+        Backends.InitDefault();
+
+        var devices = Backends.EnumerateDevices();
+        DeviceChoice? choice = DeviceSelection.Resolve(devices, options.Backend, options.DeviceIndex, out var deviceError);
+        if (choice is null)
+        {
+            throw new ParakeetException();
+        }
+
+        // A forced backend that this build/machine does not have fails here rather
+        // than silently landing on another one: the upstream returns ERR_BACKEND, and
+        // quietly using the CPU would misreport what actually ran.
+        if (choice.Device is null && options.Backend != BackendRequest.BackendAuto && !Backends.BackendAvailable(options.Backend))
+        {
+            throw new ParakeetException();
+        }
+        var model = Model.Load(modelPath, p =>
+        {
+            p.WithBackend(choice.Backend);
+            if (choice.Device is not null)
+            {
+                p.WithDevice(choice.Device);
+            }
+        });
+        string modelLabel = $"{model.Architecture}/{model.Variant}";
+        return model;
+    }
+
+    
+    private static string Decode(
+
      CliOptions options,
      string modelPath,
      DeviceChoice choice,
@@ -490,7 +528,7 @@ public static class TranscribeCommand
         {
             throw new ParakeetException(
                 $"the audio is {totalSamples} samples, more than this tool can index. Split it into shorter files.");
-            
+
         }
 
         //      stdout.WriteLine($"audio : {Fmt.Samples(totalSamples)} samples = {totalSamples / (double)WindowPlanner.SampleRate:F1}s @ 16kHz mono");
@@ -515,13 +553,13 @@ public static class TranscribeCommand
 
         if (!roles.HasFlag(TranscribeRole.Asr))
         {
-            
+
         }
 
         //     stdout.WriteLine($"diarization supported: {model.Supports(Feature.FeatureDiarization)}");
 
-        using var session = model.CreateSession();        
-        
+        using var session = model.CreateSession();
+
         var limits = session.GetLimits();
         int maxWindowMs = limits.EffectiveMaxAudioMs > 0
             ? (int)Math.Clamp(limits.EffectiveMaxAudioMs - WindowPlanner.OverlapMs, 1, int.MaxValue)
@@ -540,7 +578,7 @@ public static class TranscribeCommand
                 // short, and no flag advice applies.
                 throw new ParakeetException(
 planError);
-                
+
             }
         }
         else
@@ -584,7 +622,7 @@ planError);
             // a permission or a path problem: report it, do not dump a stack trace.
             throw new ParakeetException(
 $"--out: cannot write to {options.OutPath}: {ex.Message}");
-            
+
         }
 
         using (outFile)
@@ -622,6 +660,7 @@ $"--out: cannot write to {options.OutPath}: {ex.Message}");
                 Transcript transcript;
                 try
                 {
+
                     transcript = session.Run(chunk, r =>
                     {
                         r.WithDiarize(options.Diarize);
@@ -632,7 +671,7 @@ $"--out: cannot write to {options.OutPath}: {ex.Message}");
                 {
                     throw new ParakeetException(
 $"  transcription failed: {ex.Message}");
-                    
+
                 }
 
                 //  stdout.WriteLine($"  lang   : {transcript.DetectedLanguage}   aborted: {transcript.WasAborted}  truncated: {transcript.WasTruncated}");
@@ -687,7 +726,7 @@ $"  transcription failed: {ex.Message}");
         }
 
         //stdout.WriteLine("\n=== merged transcript (speaker-attributed) ===");
-        return merged.ToString();        
+        return merged.ToString();
     }
 
     private static int RunWithAudio(
@@ -706,7 +745,7 @@ $"  transcription failed: {ex.Message}");
             return 1;
         }
 
-  //      stdout.WriteLine($"audio : {Fmt.Samples(totalSamples)} samples = {totalSamples / (double)WindowPlanner.SampleRate:F1}s @ 16kHz mono");
+        //      stdout.WriteLine($"audio : {Fmt.Samples(totalSamples)} samples = {totalSamples / (double)WindowPlanner.SampleRate:F1}s @ 16kHz mono");
 
         using var model = Model.Load(modelPath, p =>
         {
@@ -717,8 +756,8 @@ $"  transcription failed: {ex.Message}");
             }
         });
         string modelLabel = $"{model.Architecture}/{model.Variant}";
-     //   stdout.WriteLine($"model : {modelLabel}");
-    //    stdout.WriteLine($"compute: {DescribeCompute(choice, model)}");
+        //   stdout.WriteLine($"model : {modelLabel}");
+        //    stdout.WriteLine($"compute: {DescribeCompute(choice, model)}");
 
         // transcribe.cpp 0.4 gives a model one or more roles. An ASR model keeps
         // the transcription path; anything else is a diarize/langid/vad model and
@@ -731,7 +770,7 @@ $"  transcription failed: {ex.Message}");
             return RunNonAsrRole(stdout, stderr, options, model, modelLabel, pcmSource, totalSamples, roles);
         }
 
-   //     stdout.WriteLine($"diarization supported: {model.Supports(Feature.FeatureDiarization)}");
+        //     stdout.WriteLine($"diarization supported: {model.Supports(Feature.FeatureDiarization)}");
 
         using var session = model.CreateSession();
         var limits = session.GetLimits();
@@ -739,7 +778,7 @@ $"  transcription failed: {ex.Message}");
             ? (int)Math.Clamp(limits.EffectiveMaxAudioMs - WindowPlanner.OverlapMs, 1, int.MaxValue)
             : int.MaxValue;
         int windowMs = (int)Math.Min((long)options.ChunkSeconds * 1000, maxWindowMs);
-      //  stdout.WriteLine($"window: {windowMs / 1000}s (model max audio {limits.EffectiveMaxAudioMs / 1000}s)");
+        //  stdout.WriteLine($"window: {windowMs / 1000}s (model max audio {limits.EffectiveMaxAudioMs / 1000}s)");
 
         IReadOnlyList<AudioWindow> windows;
         if (options.VadSpec is null)
@@ -826,7 +865,7 @@ $"  transcription failed: {ex.Message}");
                 var chunk = pcmSource.ReadWindow(offset, len);
                 long chunkStartMs = window.StartMs;
 
-               // stdout.WriteLine($"\n=== window {chunkIndex + 1} @ {Fmt.Ts(chunkStartMs)} ({Fmt.Samples(len)} samples) ===");
+                // stdout.WriteLine($"\n=== window {chunkIndex + 1} @ {Fmt.Ts(chunkStartMs)} ({Fmt.Samples(len)} samples) ===");
                 var windowSw = Stopwatch.StartNew();
 
                 Transcript transcript;
@@ -844,19 +883,19 @@ $"  transcription failed: {ex.Message}");
                     return 1;
                 }
 
-              //  stdout.WriteLine($"  lang   : {transcript.DetectedLanguage}   aborted: {transcript.WasAborted}  truncated: {transcript.WasTruncated}");
-             //   stdout.WriteLine($"  full   : {transcript.FullText.Trim()}");
+                //  stdout.WriteLine($"  lang   : {transcript.DetectedLanguage}   aborted: {transcript.WasAborted}  truncated: {transcript.WasTruncated}");
+                //   stdout.WriteLine($"  full   : {transcript.FullText.Trim()}");
                 if (options.Diarize != DiarizeMode.DiarizeModeOff || transcript.RawText.Length > 0)
                 {
-                   // stdout.WriteLine($"  raw    : {transcript.RawText.Trim()}");
+                    // stdout.WriteLine($"  raw    : {transcript.RawText.Trim()}");
                 }
-                
+
                 double windowSec = windowSw.Elapsed.TotalSeconds;
                 double audioSec = len / (double)WindowPlanner.SampleRate;
                 double processedSec = (offset + len) / (double)WindowPlanner.SampleRate;
                 double remainingSec = audioTotalSec - processedSec;
                 double rtf = windowSec / audioSec;
-             //   stdout.WriteLine($"  time   : {Fmt.Dur(windowSec)}/ {audioSec:0.0}s audio (RTF {rtf:0.0}x) | done {Fmt.Dur(processedSec)} / {Fmt.Dur(audioTotalSec)} | ETA ~{Fmt.Dur(remainingSec * rtf)}");
+                //   stdout.WriteLine($"  time   : {Fmt.Dur(windowSec)}/ {audioSec:0.0}s audio (RTF {rtf:0.0}x) | done {Fmt.Dur(processedSec)} / {Fmt.Dur(audioTotalSec)} | ETA ~{Fmt.Dur(remainingSec * rtf)}");
 
                 foreach (var seg in merger.Add(window, transcript))
                 {
@@ -869,7 +908,7 @@ $"  transcription failed: {ex.Message}");
                     if (outFile is not null)
                     {
                         TranscriptWriter.WriteSegment(outFile, options.Format, line);
-                      //  stdout.WriteLine($"  -> [{Fmt.Ts(start)} -> {Fmt.Ts(end)}] Speaker {seg.SpeakerId}: {text}");
+                        //  stdout.WriteLine($"  -> [{Fmt.Ts(start)} -> {Fmt.Ts(end)}] Speaker {seg.SpeakerId}: {text}");
                     }
 
                     //merged.AppendLine(CultureInfo.CurrentCulture, $"[{Fmt.Ts(start)} -> {Fmt.Ts(end)}] Speaker {seg.SpeakerId}: {text}");
@@ -882,16 +921,16 @@ $"  transcription failed: {ex.Message}");
                 // The plain and VTT footers ignore the segment list, so passing
                 // an empty one is what the non-JSON/HTML path now has.
                 TranscriptWriter.WriteFooter(outFile, options.Format, info, lines ?? []);
-            //    stdout.WriteLine($"\ntranscript written to: {options.OutPath} ({FormatName(options.Format)})");
+                //    stdout.WriteLine($"\ntranscript written to: {options.OutPath} ({FormatName(options.Format)})");
             }
 
             double totalSec = overall.Elapsed.TotalSeconds;
-        //    stdout.WriteLine("\n=== summary ===");
-        //    stdout.WriteLine($"  total  : {Fmt.Dur(totalSec)} (RTF {totalSec / audioTotalSec:0.0}x) for {Fmt.Dur(audioTotalSec)} audio");
-         //   stdout.WriteLine($"  windows: {windows.Count}");
+            //    stdout.WriteLine("\n=== summary ===");
+            //    stdout.WriteLine($"  total  : {Fmt.Dur(totalSec)} (RTF {totalSec / audioTotalSec:0.0}x) for {Fmt.Dur(audioTotalSec)} audio");
+            //   stdout.WriteLine($"  windows: {windows.Count}");
             if (options.OutPath is not null)
             {
-             //   stdout.WriteLine($"  file   : {options.OutPath} ({FormatName(options.Format)})");
+                //   stdout.WriteLine($"  file   : {options.OutPath} ({FormatName(options.Format)})");
             }
         }
 
@@ -951,7 +990,7 @@ $"  transcription failed: {ex.Message}");
             run.Segments.Select(s => new SpeechInterval(s.StartSample, s.EndSample)).ToArray(),
             totalSamples,
             windowMs);
-       // stdout.WriteLine($"windows: {windows.Count} speech window(s) of at most {windowMs / 1000}s (silence skipped)");
+        // stdout.WriteLine($"windows: {windows.Count} speech window(s) of at most {windowMs / 1000}s (silence skipped)");
 
         if (windows.Count == 0)
         {
@@ -962,7 +1001,7 @@ $"  transcription failed: {ex.Message}");
         return 0;
     }
     private static int PlanFromSpeech2(
-        
+
         CliOptions options,
         DeviceChoice choice,
         PcmSource pcmSource,
@@ -987,7 +1026,7 @@ $"  transcription failed: {ex.Message}");
         if (!vadModel.Roles.HasFlag(TranscribeRole.Vad))
         {
             //stderr.WriteLine($"--vad: {vadModel.Architecture}/{vadModel.Variant} does not serve the VAD role "
-             //   + $"(roles: {DescribeRoles(vadModel.Roles)}). Use a VAD model such as silero-vad-v6.2.");
+            //   + $"(roles: {DescribeRoles(vadModel.Roles)}). Use a VAD model such as silero-vad-v6.2.");
             return 1;
         }
 

@@ -1,6 +1,7 @@
 using Microsoft.VisualBasic;
 using NAudio.Wave;
 using System.Xml.Linq;
+using TranscribeCppSharp;
 using TranscribeCppSharp.Audio;
 using TranscribeCppSharp.Cli;
 
@@ -14,7 +15,7 @@ namespace Transcriber
             LoadConfig();
         }
 
-        SimpleMicrophoneRecorder rec = new SimpleMicrophoneRecorder();
+        StreamSTTMicrophoneRecorder rec = new StreamSTTMicrophoneRecorder();
         private void button1_Click(object sender, EventArgs e)
         {
         }
@@ -55,9 +56,28 @@ namespace Transcriber
             waveOut.Play();
         }
 
+        Session RuntimeSession;
+        Model model;
         private void toolStripButton1_Click(object sender, EventArgs e)
         {
+            if (Configs.RuntimeTranscribing)
+            {
+                if (model == null)
+                {
+                    model = TranscribeCommand.LoadModel(Configs.GGUFPath);
+                }
+                RuntimeSession = model.CreateSession();
+                rec.STTStream = RuntimeSession.CreateStream();
+                rec.STTStream.Begin();
+            }
+
             toolStripStatusLabel1.Text = "Recording...";
+            rec.TextChanged = () =>
+            {
+
+                toolStripStatusLabel1.Text = "Current transcription: " + rec.CurrentText;
+            };
+
             rec.StartRecording();
         }
 
@@ -73,7 +93,7 @@ namespace Transcriber
             {
                 return TranscribeCommand.DecodeWavFile(Configs.GGUFPath, WavPcmSource.TryOpen(ms.ToArray()));
             });
-            
+
         }
 
         private async void toolStripButton2_Click(object sender, EventArgs e)
@@ -124,12 +144,14 @@ namespace Transcriber
             var d = AutoDialog.DialogHelpers.StartDialog();
             d.AddStringField("ggufPath", "GGUF path", Configs.GGUFPath);
             d.AddBoolField("transcribeEnabled", "Auto transcribing", Configs.AutoTranscribing);
+            d.AddBoolField("runtimeTranscribing", "Runtime transcribing", Configs.RuntimeTranscribing);
 
             if (!d.ShowDialog())
                 return;
 
             Configs.GGUFPath = d.GetStringField("ggufPath");
             Configs.AutoTranscribing = d.GetBoolField("transcribeEnabled");
+            Configs.RuntimeTranscribing = d.GetBoolField("runtimeTranscribing");
             SaveConfig();
         }
 
@@ -178,10 +200,10 @@ namespace Transcriber
 
             List<ListViewItem> toDel = new List<ListViewItem>();
             for (int i = 0; i < listView1.SelectedItems.Count; i++)
-            {                
+            {
                 var lvi = listView1.SelectedItems[i];
                 toDel.Add(lvi);
-                
+
             }
             foreach (var item in toDel)
             {

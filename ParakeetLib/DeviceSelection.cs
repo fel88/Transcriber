@@ -23,7 +23,7 @@ namespace TranscribeCppSharp.Cli;
 /// <param name="Backend">Backend request to pass to the load params.</param>
 /// <param name="Device">Exact device, or null to let the backend decide.</param>
 /// <param name="Request">Short description of what was requested, for the console.</param>
-internal sealed record DeviceChoice(BackendRequest Backend, BackendDevice? Device, string Request);
+public sealed record DeviceChoice(BackendRequest Backend, BackendDevice? Device, string Request);
 
 internal static class DeviceSelection
 {

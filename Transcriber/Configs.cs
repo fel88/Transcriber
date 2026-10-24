@@ -4,5 +4,6 @@ namespace Transcriber
     {
         public static string GGUFPath;
         public static bool AutoTranscribing;
+        public static bool RuntimeTranscribing;
     }
 }
