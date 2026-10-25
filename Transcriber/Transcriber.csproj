@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="AutoDialog" Version="1.0.0.9" />
+    <PackageReference Include="AutoDialog" Version="1.0.1" />
     <PackageReference Include="NAudio" Version="3.3.0" />
   </ItemGroup>
 

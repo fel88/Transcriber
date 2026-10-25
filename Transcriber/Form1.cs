@@ -146,16 +146,16 @@ namespace Transcriber
         private void toolStripButton3_Click(object sender, EventArgs e)
         {
             var d = AutoDialog.DialogHelpers.StartDialog();
-            d.AddStringField("ggufPath", "GGUF path", Configs.GGUFPath);
-            d.AddBoolField("transcribeEnabled", "Auto transcribing", Configs.AutoTranscribing);
-            d.AddBoolField("runtimeTranscribing", "Runtime transcribing", Configs.RuntimeTranscribing);
+            var ggufPath = d.AddString("GGUF path", Configs.GGUFPath);
+            var transcribeEnabled = d.AddBool("Auto transcribing", Configs.AutoTranscribing);
+            var runtimeTranscribing = d.AddBool("Runtime transcribing", Configs.RuntimeTranscribing);
 
             if (!d.ShowDialog())
                 return;
 
-            Configs.GGUFPath = d.GetStringField("ggufPath");
-            Configs.AutoTranscribing = d.GetBoolField("transcribeEnabled");
-            Configs.RuntimeTranscribing = d.GetBoolField("runtimeTranscribing");
+            Configs.GGUFPath = ggufPath.Value;
+            Configs.AutoTranscribing = transcribeEnabled.Value;
+            Configs.RuntimeTranscribing = runtimeTranscribing.Value;
             SaveConfig();
         }
 
