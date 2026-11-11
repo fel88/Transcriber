@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TranscribeCppSharp\TranscribeCppSharp.csproj" />
+    <PackageReference Include="TranscribeCppSharp" Version="0.4.2" />
   </ItemGroup>
 
 </Project>

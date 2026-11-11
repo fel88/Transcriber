@@ -2,19 +2,31 @@
   "version": 1,
   "dependencies": {
     "net9.0": {
-      "transcribecppsharp": {
-        "type": "Project",
+      "TranscribeCppSharp": {
+        "type": "Direct",
+        "requested": "[0.4.3, )",
+        "resolved": "0.4.3",
+        "contentHash": "ULmM1eMek1fy3OSjZ4vVteAqnCzX8Cd3IFN7bLZUtf4RWKOPgGhn1QAVOtuGphbQWQyp5YzqyDyulFNe44yQag==",
         "dependencies": {
-          "TranscribeCppSharp.Interop": "[1.0.0, )"
+          "TranscribeCppSharp.Interop": "0.4.3"
         }
       },
-      "transcribecppsharp.interop": {
-        "type": "Project"
+      "TranscribeCppSharp.Interop": {
+        "type": "Direct",
+        "requested": "[0.4.3, )",
+        "resolved": "0.4.3",
+        "contentHash": "rPBKZemElUwI94f+HQC31hTTaSH0G6biE2RLF2eVOyzMw6yUfN3c9vah8pvHLgP/Wm2e6EVILatmn1f8fnaXKA=="
+      },
+      "TranscribeCppSharp.Native.win-x64": {
+        "type": "Direct",
+        "requested": "[0.4.1, )",
+        "resolved": "0.4.1",
+        "contentHash": "+AqU3GCUvlhJPTSe+ss5RQLn/7+tyy87aEzvvJs99ut95JInkhCC2SDntsr3rlFLT7beHqwVLj9CkUi33mGmFg=="
       },
       "transcriber.common": {
         "type": "Project",
         "dependencies": {
-          "TranscribeCppSharp": "[1.0.0, )"
+          "TranscribeCppSharp": "[0.4.2, )"
         }
       }
     }

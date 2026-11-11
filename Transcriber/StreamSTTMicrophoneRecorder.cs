@@ -40,7 +40,7 @@ namespace Transcriber
                     writer.Write(e.Buffer, 0, e.Buffer.Length);
 
                 }
-                var w = WavPcmSource.TryOpen(ms.ToArray());
+                var w = WavPcmSourceExt.TryOpen(ms.ToArray());
                 var span = w.ReadWindow(0, (int)w.LengthSamples);
                 STTStream.Feed(span);
 

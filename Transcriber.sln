@@ -7,11 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transcriber", "Transcriber\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ParakeetLib", "ParakeetLib\ParakeetLib.csproj", "{9E39CA8C-330C-0ADE-A5BD-3F661E6EC397}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TranscribeCppSharp", "TranscribeCppSharp\TranscribeCppSharp.csproj", "{CA1572D2-758F-CF06-17FA-5A5F686E4D81}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transcriber.Common", "Transcriber.Common\Transcriber.Common.csproj", "{A4E04F22-FEC1-49D1-BD37-15290398B258}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TranscribeCppSharp.Interop", "TranscribeCppSharp.Interop\TranscribeCppSharp.Interop.csproj", "{0AEB2BC7-A3CC-C16A-C85D-D466777DDFB4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Transcriber.Common", "Transcriber.Common\Transcriber.Common.csproj", "{08F0F331-CD6E-0D9F-DEC7-1D3E8DECAB92}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -27,18 +23,10 @@ Global
 		{9E39CA8C-330C-0ADE-A5BD-3F661E6EC397}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9E39CA8C-330C-0ADE-A5BD-3F661E6EC397}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9E39CA8C-330C-0ADE-A5BD-3F661E6EC397}.Release|Any CPU.Build.0 = Release|Any CPU
-		{CA1572D2-758F-CF06-17FA-5A5F686E4D81}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{CA1572D2-758F-CF06-17FA-5A5F686E4D81}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{CA1572D2-758F-CF06-17FA-5A5F686E4D81}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{CA1572D2-758F-CF06-17FA-5A5F686E4D81}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A4E04F22-FEC1-49D1-BD37-15290398B258}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A4E04F22-FEC1-49D1-BD37-15290398B258}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A4E04F22-FEC1-49D1-BD37-15290398B258}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A4E04F22-FEC1-49D1-BD37-15290398B258}.Release|Any CPU.Build.0 = Release|Any CPU
-		{0AEB2BC7-A3CC-C16A-C85D-D466777DDFB4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{0AEB2BC7-A3CC-C16A-C85D-D466777DDFB4}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{0AEB2BC7-A3CC-C16A-C85D-D466777DDFB4}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{0AEB2BC7-A3CC-C16A-C85D-D466777DDFB4}.Release|Any CPU.Build.0 = Release|Any CPU
+		{08F0F331-CD6E-0D9F-DEC7-1D3E8DECAB92}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{08F0F331-CD6E-0D9F-DEC7-1D3E8DECAB92}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{08F0F331-CD6E-0D9F-DEC7-1D3E8DECAB92}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{08F0F331-CD6E-0D9F-DEC7-1D3E8DECAB92}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

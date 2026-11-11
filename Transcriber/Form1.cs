@@ -4,6 +4,8 @@ using System.Xml.Linq;
 using TranscribeCppSharp;
 using TranscribeCppSharp.Audio;
 using TranscribeCppSharp.Cli;
+using TranscribeCppSharp.Interop;
+using static TranscribeCppSharp.Cli.TranscribeCommand;
 
 namespace Transcriber
 {
@@ -55,7 +57,7 @@ namespace Transcriber
             waveOut.Init(provider);
             waveOut.Play();
         }
-
+        
         Session RuntimeSession;
         Model model;
         private void toolStripButton1_Click(object sender, EventArgs e)
@@ -89,9 +91,9 @@ namespace Transcriber
                 writer.Write(data, 0, data.Length);
             }
 
-            return await Task.Run(() =>
+            return await System.Threading.Tasks.Task.Run(() =>
             {
-                return TranscribeCommand.DecodeWavFile(Configs.GGUFPath, WavPcmSource.TryOpen(ms.ToArray()));
+                return TranscribeCommand.DecodeWavFile(Configs.GGUFPath, WavPcmSourceExt.TryOpen(ms.ToArray()));
             });
 
         }
@@ -238,4 +240,6 @@ namespace Transcriber
             listView1.Items.Add(new ListViewItem(new string[] { DateTime.Now.ToShortTimeString(), SizeSuffix(result.Data.Length), res }) { Tag = result.Data });
         }
     }
+
+
 }

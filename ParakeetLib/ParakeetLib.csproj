@@ -7,8 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\TranscribeCppSharp.Interop\TranscribeCppSharp.Interop.csproj" />
-    <ProjectReference Include="..\TranscribeCppSharp\TranscribeCppSharp.csproj" />
+    <PackageReference Include="TranscribeCppSharp" Version="0.4.3" />
+    <PackageReference Include="TranscribeCppSharp.Interop" Version="0.4.3" />
+    <PackageReference Include="TranscribeCppSharp.Native.win-x64" Version="0.4.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Transcriber.Common\Transcriber.Common.csproj" />
   </ItemGroup>
 
